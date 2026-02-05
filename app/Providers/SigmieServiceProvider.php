@@ -23,17 +23,27 @@ class SigmieServiceProvider extends ServiceProvider
             $config = [];
             
             // Elastic Cloud requires authentication
-            $user = env('ELASTICSEARCH_USER', 'elastic');
+            // Note: env() doesn't work when config is cached - ensure config:clear is run after .env changes
+            $user = env('ELASTICSEARCH_USER');
             $password = env('ELASTICSEARCH_PASSWORD');
             
-            if ($user && $password) {
-                $config['auth'] = [
-                    $user,
-                    $password,
-                ];
-            } else {
-                throw new \RuntimeException('ELASTICSEARCH_USER and ELASTICSEARCH_PASSWORD must be set for Elastic Cloud');
+            // Default user to 'elastic' if not set, but password is required
+            if (empty($user)) {
+                $user = 'elastic';
             }
+            
+            if (empty($password)) {
+                throw new \RuntimeException(
+                    "ELASTICSEARCH_PASSWORD must be set for Elastic Cloud. " .
+                    "Current USER: " . ($user ?: 'not set') . ". " .
+                    "If you just updated .env, run: php artisan config:clear"
+                );
+            }
+            
+            $config['auth'] = [
+                $user,
+                $password,
+            ];
             
             // SSL verification - default to true for Elastic Cloud (secure by default)
             // Only disable for local development if needed

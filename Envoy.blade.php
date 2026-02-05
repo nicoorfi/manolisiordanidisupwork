@@ -40,14 +40,16 @@
     {{-- run_tests --}}
     push_to_repository
     enable_maintenance_mode
+    stop_octane
     clone_repository
     run_composer
     update_symlinks
+    clear_config_cache
     run_migrations
     optimize_laravel
     cleanup_old_releases
     reload_php_fpm
-    reload_octane
+    start_octane
     disable_maintenance_mode
 @endstory
 
@@ -224,6 +226,17 @@
 @endtask
 
 
+@task('clear_config_cache', ['on' => 'production'])
+    echo "Clearing config cache to pick up .env changes..."
+    if [ -d {{ $currentDirectory }} ] && [ -f {{ $currentDirectory }}/artisan ]; then
+        cd {{ $currentDirectory }}
+        {{ $phpBinary }} artisan config:clear
+        echo "✓ Config cache cleared"
+    else
+        echo "ℹ️  Current directory not found - will clear after symlink update"
+    fi
+@endtask
+
 @task('run_migrations', ['on' => 'production'])
     echo "Running migrations..."
     cd {{ $newReleasePath }}
@@ -239,6 +252,9 @@
     echo "Optimizing Laravel..."
     cd {{ $newReleasePath }}
     if [ -f artisan ]; then
+        # Clear config cache first to ensure .env changes are picked up
+        {{ $phpBinary }} artisan config:clear
+        # Then cache config with new values
         {{ $phpBinary }} artisan config:cache
         {{ $phpBinary }} artisan route:cache
         {{ $phpBinary }} artisan view:cache
@@ -270,30 +286,32 @@
     sudo systemctl reload php8.3-fpm || sudo systemctl reload php8.2-fpm || echo "PHP-FPM reload skipped - service may not be configured"
 @endtask
 
-@task('reload_octane', ['on' => 'production'])
-    echo "Reloading Laravel Octane..."
+@task('stop_octane', ['on' => 'production'])
+    echo "Stopping Laravel Octane..."
     if [ -d {{ $currentDirectory }} ] && [ -f {{ $currentDirectory }}/artisan ]; then
         cd {{ $currentDirectory }}
-        
-        # Try graceful reload first (best for zero-downtime)
-        if {{ $phpBinary }} artisan octane:reload 2>/dev/null; then
-            echo "✓ Octane reloaded gracefully"
+        {{ $phpBinary }} artisan octane:stop || echo "⚠️  Octane stop command failed (may not be running)"
+        echo "✓ Octane stopped"
+    else
+        echo "⚠️  Current directory not found - skipping Octane stop"
+    fi
+@endtask
+
+@task('start_octane', ['on' => 'production'])
+    echo "Starting Laravel Octane in background..."
+    if [ -d {{ $currentDirectory }} ] && [ -f {{ $currentDirectory }}/artisan ]; then
+        cd {{ $currentDirectory }}
+        # Start Octane in background
+        nohup {{ $phpBinary }} artisan octane:start --server=roadrunner > /dev/null 2>&1 &
+        echo "✓ Octane started in background"
+        sleep 2
+        # Verify it's running
+        if pgrep -f "artisan octane:start" > /dev/null; then
+            echo "✓ Octane process confirmed running"
         else
-            # Fallback: restart via supervisor if configured
-            if sudo systemctl is-active --quiet octane 2>/dev/null; then
-                echo "Restarting Octane via systemd..."
-                sudo systemctl restart octane
-                echo "✓ Octane restarted via systemd"
-            elif sudo supervisorctl status octane 2>/dev/null | grep -q RUNNING; then
-                echo "Restarting Octane via supervisor..."
-                sudo supervisorctl restart octane
-                echo "✓ Octane restarted via supervisor"
-            else
-                echo "⚠️  Octane not found running - may need manual start"
-                echo "   Start with: cd {{ $currentDirectory }} && {{ $phpBinary }} artisan octane:start"
-            fi
+            echo "⚠️  Octane process not found - check logs"
         fi
     else
-        echo "⚠️  Current directory not found - skipping Octane reload"
+        echo "⚠️  Current directory not found - skipping Octane start"
     fi
 @endtask
