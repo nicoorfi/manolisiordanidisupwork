@@ -57,27 +57,89 @@ class SeedTestProducts extends Command
         
         $variants = ['Pro', 'Plus', 'Max', 'Mini', 'Standard', 'Premium', 'Deluxe', 'Elite'];
         
-        $documents = [];
-        for ($i = 1; $i <= $count; $i++) {
-            $baseName = $productNames[array_rand($productNames)];
-            $variant = rand(1, 3) === 1 ? ' ' . $variants[array_rand($variants)] : '';
-            $name = $baseName . $variant . ' #' . $i;
-            $price = number_format(rand(99, 99999) / 100, 2, '.', '');
-            $color = $colors[array_rand($colors)];
+        $batchSize = 5000;
+        $totalBatches = ceil($count / $batchSize);
+        
+        $this->info("Processing in {$totalBatches} batches of {$batchSize} products each...");
+        
+        $bar = $this->output->createProgressBar($totalBatches);
+        $bar->setFormat(' %current%/%max% batches [%bar%] %percent:3s%% | %elapsed:6s%/%estimated:-6s% | %memory:6s%');
+        $bar->start();
+        
+        $collection = $sigmie->collect('products', refresh: false);
+        $startTime = microtime(true);
+        $lastStatusUpdate = 0;
+        
+        for ($batch = 0; $batch < $totalBatches; $batch++) {
+            $documents = [];
+            $batchStart = ($batch * $batchSize) + 1;
+            $batchEnd = min(($batch + 1) * $batchSize, $count);
             
-            $documents[] = new Document([
-                'name' => $name,
-                'price' => (float) $price,
-                'color' => $color,
-            ]);
+            for ($i = $batchStart; $i <= $batchEnd; $i++) {
+                $baseName = $productNames[array_rand($productNames)];
+                $variant = rand(1, 3) === 1 ? ' ' . $variants[array_rand($variants)] : '';
+                $name = $baseName . $variant . ' #' . $i;
+                $price = number_format(rand(99, 99999) / 100, 2, '.', '');
+                $color = $colors[array_rand($colors)];
+                
+                $documents[] = new Document([
+                    'name' => $name,
+                    'price' => (float) $price,
+                    'color' => $color,
+                ]);
+            }
+            
+            $collection->merge($documents);
+            
+            // Calculate progress info
+            $currentTime = microtime(true);
+            $elapsed = $currentTime - $startTime;
+            $processed = min(($batch + 1) * $batchSize, $count);
+            $speed = $elapsed > 0 ? round($processed / $elapsed) : 0;
+            $remaining = $count - $processed;
+            $eta = $speed > 0 ? round($remaining / $speed) : 0;
+            
+            // Update progress bar message with status every 10 batches or on last batch
+            if (($batch + 1) % 10 === 0 || ($batch + 1) === $totalBatches) {
+                $status = sprintf(
+                    ' | Products: %s/%s | Speed: %s/s | ETA: %s',
+                    number_format($processed),
+                    number_format($count),
+                    number_format($speed),
+                    $eta > 0 ? $this->formatTime($eta) : '--'
+                );
+                $bar->setMessage($status);
+            }
+            
+            $bar->advance();
         }
         
-        $collection = $sigmie->collect('products', refresh: true);
-        $collection->merge($documents);
+        $bar->finish();
+        $this->newLine();
         
-        $this->info("✓ Successfully indexed {$count} test products!");
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+        $productsPerSecond = round($count / $duration);
+        
+        $this->info("✓ Successfully indexed " . number_format($count) . " test products in {$duration} seconds!");
+        $this->info("✓ Average speed: " . number_format($productsPerSecond) . " products/second");
         $this->info("You can now test the search at: http://localhost:8000");
         
         return Command::SUCCESS;
+    }
+    
+    private function formatTime(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return "{$seconds}s";
+        }
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        if ($minutes < 60) {
+            return "{$minutes}m {$remainingSeconds}s";
+        }
+        $hours = floor($minutes / 60);
+        $remainingMinutes = $minutes % 60;
+        return "{$hours}h {$remainingMinutes}m";
     }
 }

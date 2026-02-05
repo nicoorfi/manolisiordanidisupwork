@@ -89,13 +89,39 @@
                 </form>
             </div>
 
-            <div id="results" class="space-y-4">
-                <div class="text-center py-12">
-                    <svg class="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
-                    <p class="text-gray-500 text-lg">Enter a search query to get started</p>
-                    <p class="text-gray-400 text-sm mt-2">Try searching for: "headphones", "laptop", or filter by price/color</p>
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- Facets Sidebar -->
+                <div id="facets" class="lg:col-span-1 hidden lg:block">
+                    <div class="bg-white rounded-lg border border-gray-200 p-4 sticky top-4">
+                        <h2 class="text-lg font-bold mb-4 text-gray-800">Filters</h2>
+                        
+                        <!-- Color Facets -->
+                        <div id="colorFacets" class="mb-6">
+                            <h3 class="text-sm font-semibold text-gray-700 mb-3">Colors</h3>
+                            <div id="colorFacetList" class="space-y-2">
+                                <p class="text-gray-400 text-sm">Loading...</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Price Facets -->
+                        <div id="priceFacets" class="mb-6">
+                            <h3 class="text-sm font-semibold text-gray-700 mb-3">Price Ranges</h3>
+                            <div id="priceFacetList" class="space-y-2">
+                                <p class="text-gray-400 text-sm">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Results -->
+                <div id="results" class="lg:col-span-3 space-y-4">
+                    <div class="text-center py-12">
+                        <svg class="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        <p class="text-gray-500 text-lg">Enter a search query to get started</p>
+                        <p class="text-gray-400 text-sm mt-2">Try searching for: "headphones", "laptop", or filter by price/color</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -109,52 +135,57 @@
         const searchButton = document.getElementById('searchButton');
         const clearButton = document.getElementById('clearButton');
         
-        let searchTimeout;
+        let currentSearchController = null;
         let isSearching = false;
 
-        // Debounced search function
+        // Instant search function - updates on every keystroke
         function performSearch() {
-            if (isSearching) return;
-            
             const query = input.value.trim();
             const minPrice = document.getElementById('minPrice').value;
             const maxPrice = document.getElementById('maxPrice').value;
             const color = document.getElementById('color').value.trim();
             
-            if (!query && !minPrice && !maxPrice && !color) {
-                results.innerHTML = `
-                    <div class="text-center py-12">
-                        <svg class="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                        </svg>
-                        <p class="text-gray-500 text-lg">Please enter a search query or filter</p>
-                    </div>
-                `;
-                return;
+            // Cancel previous request if still pending
+            if (currentSearchController) {
+                currentSearchController.abort();
             }
-
+            
+            // Create new AbortController for this request
+            currentSearchController = new AbortController();
+            
             isSearching = true;
             loadingIndicator.classList.remove('hidden');
             searchButton.disabled = true;
             searchButton.classList.add('opacity-50', 'cursor-not-allowed');
 
-            results.innerHTML = `
-                <div class="text-center py-12">
-                    <svg class="animate-spin mx-auto h-12 w-12 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p class="text-gray-600">Searching products...</p>
-                </div>
-            `;
+            // Only show loading if we don't have results yet
+            if (!results.querySelector('.grid')) {
+                results.innerHTML = `
+                    <div class="text-center py-12">
+                        <svg class="animate-spin mx-auto h-12 w-12 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="text-gray-600">Searching products...</p>
+                    </div>
+                `;
+            }
 
-            const params = new URLSearchParams();
-            if (query) params.append('q', query);
-            if (minPrice) params.append('min_price', minPrice);
-            if (maxPrice) params.append('max_price', maxPrice);
-            if (color) params.append('color', color);
+            const formData = new FormData();
+            if (query) formData.append('q', query);
+            if (minPrice) formData.append('min_price', minPrice);
+            if (maxPrice) formData.append('max_price', maxPrice);
+            if (color) formData.append('color', color);
             
-            fetch(`/search?${params.toString()}`)
+            fetch('/search', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+                signal: currentSearchController.signal,
+            })
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
@@ -166,6 +197,14 @@
                     searchButton.disabled = false;
                     searchButton.classList.remove('opacity-50', 'cursor-not-allowed');
                     isSearching = false;
+
+                    // Show errors if any
+                    if (data.errors && data.errors.length > 0) {
+                        console.warn('Search errors:', data.errors);
+                    }
+
+                    // Update facets
+                    updateFacets(data.facets || {});
 
                     if (data.hits && data.hits.length > 0) {
                         let html = `
@@ -234,6 +273,11 @@
                     }
                 })
                 .catch(error => {
+                    // Ignore abort errors (cancelled requests)
+                    if (error.name === 'AbortError') {
+                        return;
+                    }
+                    
                     console.error('Search error:', error);
                     loadingIndicator.classList.add('hidden');
                     searchButton.disabled = false;
@@ -255,17 +299,26 @@
         // Form submission
         form.addEventListener('submit', (e) => {
             e.preventDefault();
-            clearTimeout(searchTimeout);
             performSearch();
         });
 
-        // Real-time search with debouncing (optional - uncomment to enable)
-        // input.addEventListener('input', () => {
-        //     clearTimeout(searchTimeout);
-        //     searchTimeout = setTimeout(() => {
-        //         performSearch();
-        //     }, 500);
-        // });
+        // Instant search on every keystroke
+        input.addEventListener('input', () => {
+            performSearch();
+        });
+        
+        // Also trigger instant search on filter changes
+        document.getElementById('minPrice').addEventListener('input', () => {
+            performSearch();
+        });
+        
+        document.getElementById('maxPrice').addEventListener('input', () => {
+            performSearch();
+        });
+        
+        document.getElementById('color').addEventListener('input', () => {
+            performSearch();
+        });
 
         // Clear button
         clearButton.addEventListener('click', () => {
@@ -291,6 +344,146 @@
                 form.dispatchEvent(new Event('submit'));
             }
         });
+        
+        // Load initial facets on page load
+        performSearch();
+        
+        // Function to update facets
+        function updateFacets(facets) {
+            const colorFacetList = document.getElementById('colorFacetList');
+            const priceFacetList = document.getElementById('priceFacetList');
+            const facetsContainer = document.getElementById('facets');
+            
+            // Show facets container if we have data
+            if (facets.color || facets.price) {
+                facetsContainer.classList.remove('hidden');
+            }
+            
+            // Update color facets - handle terms/buckets format
+            if (facets.color) {
+                const colorData = facets.color;
+                let html = '';
+                
+                // Check if it's a terms aggregation (has buckets array)
+                if (colorData.buckets && Array.isArray(colorData.buckets)) {
+                    colorData.buckets.forEach(bucket => {
+                        const isActive = document.getElementById('color').value === bucket.key;
+                        html += `
+                            <div class="flex items-center justify-between p-2 rounded ${isActive ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50'} cursor-pointer transition-colors" 
+                                 onclick="selectColorFacet('${bucket.key}')">
+                                <span class="text-sm text-gray-700">${bucket.key}</span>
+                                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">${bucket.doc_count.toLocaleString()}</span>
+                            </div>
+                        `;
+                    });
+                } else if (Array.isArray(colorData)) {
+                    // Handle array format
+                    colorData.forEach(facet => {
+                        const isActive = document.getElementById('color').value === (facet.key || facet.value);
+                        html += `
+                            <div class="flex items-center justify-between p-2 rounded ${isActive ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50'} cursor-pointer transition-colors" 
+                                 onclick="selectColorFacet('${facet.key || facet.value}')">
+                                <span class="text-sm text-gray-700">${facet.key || facet.value}</span>
+                                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">${(facet.doc_count || facet.count || 0).toLocaleString()}</span>
+                            </div>
+                        `;
+                    });
+                }
+                
+                if (html) {
+                    colorFacetList.innerHTML = html;
+                } else {
+                    colorFacetList.innerHTML = '<p class="text-gray-400 text-sm">No colors found</p>';
+                }
+            } else {
+                colorFacetList.innerHTML = '<p class="text-gray-400 text-sm">No colors found</p>';
+            }
+            
+            // Update price facets - show stats and create ranges
+            if (facets.price) {
+                const priceData = facets.price;
+                let html = '';
+                
+                // Check if it has buckets (range aggregation)
+                if (priceData.buckets && Array.isArray(priceData.buckets)) {
+                    priceData.buckets.forEach(bucket => {
+                        const currentMin = document.getElementById('minPrice').value;
+                        const currentMax = document.getElementById('maxPrice').value;
+                        const isActive = currentMin == bucket.from && currentMax == bucket.to;
+                        
+                        let rangeLabel = bucket.key;
+                        if (bucket.from !== null && bucket.to !== null) {
+                            rangeLabel = `$${bucket.from} - $${bucket.to}`;
+                        } else if (bucket.from !== null) {
+                            rangeLabel = `$${bucket.from}+`;
+                        }
+                        
+                        html += `
+                            <div class="flex items-center justify-between p-2 rounded ${isActive ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50'} cursor-pointer transition-colors" 
+                                 onclick="selectPriceFacet(${bucket.from || 'null'}, ${bucket.to || 'null'})">
+                                <span class="text-sm text-gray-700">${rangeLabel}</span>
+                                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">${bucket.doc_count.toLocaleString()}</span>
+                            </div>
+                        `;
+                    });
+                } else if (priceData.min !== undefined && priceData.max !== undefined) {
+                    // Show price stats and create ranges
+                    const min = Math.floor(priceData.min);
+                    const max = Math.ceil(priceData.max);
+                    const avg = Math.round(priceData.avg || (min + max) / 2);
+                    
+                    // Create price ranges based on stats
+                    const ranges = [
+                        { from: min, to: Math.min(min + 50, avg), label: `$${min} - $${Math.min(min + 50, avg)}` },
+                        { from: Math.min(min + 50, avg), to: avg, label: `$${Math.min(min + 50, avg)} - $${avg}` },
+                        { from: avg, to: max, label: `$${avg} - $${max}` },
+                    ];
+                    
+                    ranges.forEach(range => {
+                        html += `
+                            <div class="flex items-center justify-between p-2 rounded hover:bg-gray-50 cursor-pointer transition-colors" 
+                                 onclick="selectPriceFacet(${range.from}, ${range.to})">
+                                <span class="text-sm text-gray-700">${range.label}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    // Show stats
+                    html += `
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1">Price Range</p>
+                            <p class="text-sm font-semibold text-gray-700">$${min.toFixed(2)} - $${max.toFixed(2)}</p>
+                            <p class="text-xs text-gray-500 mt-1">Avg: $${avg.toFixed(2)}</p>
+                        </div>
+                    `;
+                }
+                
+                if (html) {
+                    priceFacetList.innerHTML = html;
+                } else {
+                    priceFacetList.innerHTML = '<p class="text-gray-400 text-sm">No price data found</p>';
+                }
+            } else {
+                priceFacetList.innerHTML = '<p class="text-gray-400 text-sm">No price data found</p>';
+            }
+        }
+        
+        // Function to select color facet
+        function selectColorFacet(color) {
+            document.getElementById('color').value = color;
+            performSearch();
+        }
+        
+        // Function to select price facet
+        function selectPriceFacet(min, max) {
+            document.getElementById('minPrice').value = min || '';
+            document.getElementById('maxPrice').value = max || '';
+            performSearch();
+        }
+        
+        // Make functions globally available
+        window.selectColorFacet = selectColorFacet;
+        window.selectPriceFacet = selectPriceFacet;
     </script>
 </body>
 </html>
